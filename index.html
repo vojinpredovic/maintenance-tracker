@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maintenance Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --card: #161b27;
+      --border: #222a3e;
+      --text: #e2e8f4;
+      --sub: #6b7fa8;
+      --accent: #4080ff;
+      --accent-bg: #1a2644;
+      --red: #f07070;
+      --r: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      font-size: 15px;
+    }
+
+    [hidden] { display: none !important; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 18px;
+      border: none;
+      border-radius: var(--r);
+      font: 500 14px/1 inherit;
+      cursor: pointer;
+      transition: filter 0.1s;
+    }
+    .btn:hover  { filter: brightness(0.91); }
+    .btn:active { filter: brightness(0.83); }
+
+    .btn-primary { background: var(--accent); color: #fff; width: 100%; padding: 11px; }
+    .btn-ghost   { background: transparent; color: var(--sub); padding: 6px 10px; font-size: 13px; }
+    .btn-icon    { background: transparent; color: var(--sub); padding: 4px 8px; font-size: 16px; border-radius: 5px; line-height: 1; border: none; cursor: pointer; }
+    .btn-icon:hover { color: var(--red); background: rgba(240,112,112,0.12); filter: none; }
+
+    .btn-help {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--sub);
+      font: 600 12px/1 inherit;
+      padding: 5px 11px;
+      border-radius: 20px;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      transition: border-color 0.1s, color 0.1s;
+    }
+    .btn-help:hover { border-color: var(--accent); color: var(--accent); }
+
+    input, select {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font: 15px/1.4 inherit;
+      color: var(--text);
+      background: var(--card);
+      outline: none;
+      transition: border-color 0.12s;
+      -webkit-appearance: none;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    input::placeholder { color: var(--sub); }
+
+    .field-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--sub);
+      margin-bottom: 5px;
+    }
+
+    .error-msg {
+      font-size: 13px;
+      color: var(--red);
+      margin-top: 8px;
+    }
+
+    /* ── Profile Screen ────────────────────────────────────── */
+
+    #profileScreen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    #profileScreen h1 {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      margin-bottom: 36px;
+    }
+
+    .profile-panel {
+      width: 100%;
+      max-width: 340px;
+    }
+
+    #profileList {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .profile-row {
+      display: flex;
+      align-items: center;
+      padding: 13px 14px;
+      cursor: pointer;
+      gap: 10px;
+      transition: border-color 0.12s;
+    }
+    .profile-row:hover { border-color: var(--accent); }
+
+    .profile-row-info { flex: 1; min-width: 0; }
+    .profile-row-name { font-weight: 600; font-size: 15px; }
+    .profile-row-meta { font-size: 13px; color: var(--sub); margin-top: 1px; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--sub);
+      margin-bottom: 12px;
+    }
+
+    .new-profile-card {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .unit-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .unit-option { position: relative; }
+    .unit-option input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .unit-option label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--sub);
+      background: var(--card);
+      transition: all 0.12s;
+      margin: 0;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .unit-option input[type="radio"]:checked + label {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+      color: var(--accent);
+    }
+
+    /* ── Tracker Screen ────────────────────────────────────── */
+
+    #trackerScreen {
+      max-width: 580px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+    }
+
+    .tracker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+
+    .tracker-name {
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.3px;
+    }
+
+    .tracker-header-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* Maintenance card */
+    .maintenance-card {
+      padding: 30px 24px 26px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .mc-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--sub);
+      margin-bottom: 12px;
+    }
+
+    .mc-value {
+      font-size: 60px;
+      font-weight: 800;
+      letter-spacing: -3px;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .mc-unit { font-size: 14px; color: var(--sub); }
+
+    .mc-margin {
+      font-size: 13px;
+      color: var(--sub);
+      margin-top: 6px;
+      opacity: 0.8;
+    }
+
+    .mc-pending { font-size: 15px; color: var(--sub); padding: 4px 0; }
+    .mc-pending strong { color: var(--text); }
+
+    .mc-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 16px;
+    }
+    .mc-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background 0.2s;
+    }
+    .mc-dot.on { background: var(--accent); }
+
+    /* Log form */
+    .log-card {
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--sub);
+      margin-bottom: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    @media (max-width: 420px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Entries */
+    .entries-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+
+    .entries-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--sub);
+      padding: 10px 14px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .entries-table td {
+      padding: 11px 14px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .entries-table tbody tr:last-child td { border-bottom: none; }
+    .entries-table tbody tr:hover td { background: var(--bg); }
+
+    .td-del { width: 32px; text-align: right; }
+
+    .empty-state {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      text-align: center;
+      padding: 36px 20px;
+      color: var(--sub);
+      font-size: 14px;
+    }
+
+    /* ── Guide Modal ───────────────────────────────────────── */
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+      backdrop-filter: blur(2px);
+    }
+
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      max-width: 420px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 26px;
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin-bottom: 14px;
+    }
+
+    .modal-section {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--sub);
+      margin: 20px 0 6px;
+    }
+
+    .modal p {
+      font-size: 14px;
+      color: var(--sub);
+      line-height: 1.65;
+    }
+
+    .modal p + p { margin-top: 6px; }
+
+    .modal-footer { margin-top: 22px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Profile Screen ──────────────────────────────────────── -->
+<div id="profileScreen">
+  <h1>Maintenance Tracker</h1>
+  <div class="profile-panel">
+    <div id="profileList"></div>
+    <div class="section-label" id="newLabel">New Profile</div>
+    <div class="card new-profile-card">
+      <div>
+        <label class="field-label" for="inputName">Name</label>
+        <input type="text" id="inputName" placeholder="Your name" maxlength="40" autocomplete="off">
+      </div>
+      <div>
+        <span class="field-label">Weight unit</span>
+        <div class="unit-selector">
+          <div class="unit-option">
+            <input type="radio" name="unit" id="unitKg" value="kg" checked>
+            <label for="unitKg">kg</label>
+          </div>
+          <div class="unit-option">
+            <input type="radio" name="unit" id="unitLbs" value="lbs">
+            <label for="unitLbs">lbs</label>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btnCreate">Create Profile</button>
+      <div class="error-msg" id="profileError" hidden></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tracker Screen ─────────────────────────────────────── -->
+<div id="trackerScreen" hidden>
+  <div class="tracker-header">
+    <div class="tracker-name" id="trackerName"></div>
+    <div class="tracker-header-actions">
+      <button class="btn-help" id="btnGuide">Guide</button>
+      <button class="btn btn-ghost" id="btnBack">← Profiles</button>
+    </div>
+  </div>
+
+  <div class="card maintenance-card" id="maintenanceCard"></div>
+
+  <div class="card log-card">
+    <div class="card-title">Log Entry</div>
+    <div class="form-grid">
+      <div>
+        <label class="field-label" for="inputDate">Date</label>
+        <input type="date" id="inputDate">
+      </div>
+      <div>
+        <label class="field-label" id="weightLabel" for="inputWeight">Weight</label>
+        <input type="number" id="inputWeight" placeholder="0.0" step="0.1" min="0.1">
+      </div>
+      <div>
+        <label class="field-label" for="inputCalories">Calories</label>
+        <input type="number" id="inputCalories" placeholder="0" step="1" min="1">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="btnAdd">Add Entry</button>
+    <div class="error-msg" id="entryError" hidden></div>
+  </div>
+
+  <div>
+    <div class="card-title" style="margin-bottom:10px">Log</div>
+    <div id="entriesContainer"></div>
+  </div>
+</div>
+
+<!-- ── Guide Modal ────────────────────────────────────────── -->
+<div id="guideModal" hidden>
+  <div class="modal-overlay" id="guideOverlay">
+    <div class="modal">
+      <div class="modal-title">How to use</div>
+      <p>Log your weight in the same condition every day and track every calorie. The app estimates your <strong>maintenance calories</strong> — what you need to eat to stay at the same weight. More entries will filter out inaccuracies, producing a more accurate estimate and a smaller ± margin.</p>
+
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btnCloseGuide">Got it</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Storage ───────────────────────────────────────────────────
+
+const STORAGE_KEY = 'mct_v1';
+let db = { profiles: {}, guideShown: false };
+
+function loadDb() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) db = JSON.parse(raw);
+  } catch {}
+}
+
+function saveDb() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+}
+
+// ── Algorithm ─────────────────────────────────────────────────
+
+function mean(arr) {
+  return arr.reduce((s, v) => s + v, 0) / arr.length;
+}
+
+function toLbs(weight, unit) {
+  return unit === 'kg' ? weight * 2.20462 : weight;
+}
+
+// Fits a least-squares line through (day, weight_lbs) pairs.
+// Returns { value, margin } where:
+//   value  = estimated maintenance calories/day
+//   margin = ±1 standard error of that estimate (cal/day)
+//
+// Smoothing is intrinsic to the regression: random daily weight
+// fluctuations (water retention, meal timing, etc.) average out
+// when fitting a line, leaving only the true trend.
+//
+// maintenance = avg_net_calories - slope × 3500
+//   slope > 0 → gaining → ate above maintenance → subtract surplus
+//   slope < 0 → losing  → ate below maintenance → add back deficit
+//   slope = 0 → stable  → maintenance = avg calories
+function computeMaintenance(profile) {
+  const entries = [...profile.entries].sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
+  );
+  const n = entries.length;
+  if (n < 7) return null;
+
+  const t0 = new Date(entries[0].date).getTime();
+  const xs = entries.map(e => (new Date(e.date).getTime() - t0) / 86400000);
+  const ys = entries.map(e => toLbs(e.weight, profile.unit));
+  const cals = entries.map(e => e.calories);
+
+  // Linear regression on (day, weight_lbs)
+  const xBar = mean(xs);
+  const yBar = mean(ys);
+  let num = 0, sxx = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - xBar) * (ys[i] - yBar);
+    sxx += (xs[i] - xBar) ** 2;
+  }
+  const slope     = sxx === 0 ? 0 : num / sxx;   // lbs/day
+  const intercept = yBar - slope * xBar;
+
+  // Standard error of the slope → propagate to calorie uncertainty
+  // Uses n-2 degrees of freedom (two fitted parameters: slope + intercept)
+  let sse = 0;
+  for (let i = 0; i < n; i++) {
+    const resid = ys[i] - (slope * xs[i] + intercept);
+    sse += resid * resid;
+  }
+  const mse     = n > 2 ? sse / (n - 2) : 0;
+  const seSlope = sxx > 0 ? Math.sqrt(mse / sxx) : 0;
+  const margin  = Math.round(seSlope * 3500);
+
+  const value = Math.round(mean(cals) - slope * 3500);
+
+  return { value, margin };
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+
+const $ = id => document.getElementById(id);
+
+function setErr(id, msg) {
+  const el = $(id);
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
+function todayISO() {
+  const d = new Date();
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function fmtDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                  'Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[m - 1]} ${d}, ${y}`;
+}
+
+// ── Guide Modal ───────────────────────────────────────────────
+
+function openGuide() {
+  $('guideModal').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeGuide() {
+  $('guideModal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+$('btnGuide').addEventListener('click', openGuide);
+$('btnCloseGuide').addEventListener('click', closeGuide);
+$('guideOverlay').addEventListener('click', e => {
+  if (e.target === $('guideOverlay')) closeGuide();
+});
+
+// ── Profile Screen ────────────────────────────────────────────
+
+function renderProfileScreen() {
+  const list = $('profileList');
+  list.innerHTML = '';
+  const names = Object.keys(db.profiles);
+
+  $('newLabel').textContent = names.length ? 'New Profile' : 'Create a Profile';
+
+  names.forEach(name => {
+    const p     = db.profiles[name];
+    const count = p.entries.length;
+
+    const row  = document.createElement('div');
+    row.className = 'card profile-row';
+
+    const info = document.createElement('div');
+    info.className = 'profile-row-info';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'profile-row-name';
+    nameEl.textContent = name;
+
+    const meta = document.createElement('div');
+    meta.className = 'profile-row-meta';
+    meta.textContent = `${count} entr${count === 1 ? 'y' : 'ies'} · ${p.unit}`;
+
+    info.append(nameEl, meta);
+
+    const del = document.createElement('button');
+    del.className = 'btn btn-icon';
+    del.textContent = '×';
+    del.title = 'Delete profile';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      if (confirm(`Delete "${name}"? All data will be lost.`)) {
+        delete db.profiles[name];
+        saveDb();
+        renderProfileScreen();
+      }
+    });
+
+    row.append(info, del);
+    row.addEventListener('click', () => openProfile(name));
+    list.appendChild(row);
+  });
+}
+
+$('btnCreate').addEventListener('click', () => {
+  const name = $('inputName').value.trim();
+  const unit = document.querySelector('input[name="unit"]:checked').value;
+
+  if (!name) { setErr('profileError', 'Please enter a name.'); return; }
+  if (db.profiles[name]) { setErr('profileError', 'A profile with this name already exists.'); return; }
+
+  db.profiles[name] = { unit, entries: [] };
+  saveDb();
+  setErr('profileError', '');
+  $('inputName').value = '';
+  openProfile(name);
+});
+
+$('inputName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('btnCreate').click();
+});
+
+// ── Tracker Screen ────────────────────────────────────────────
+
+let activeProfile = null;
+
+function openProfile(name) {
+  activeProfile = name;
+  $('profileScreen').hidden = true;
+  $('trackerScreen').hidden = false;
+  $('trackerName').textContent = name;
+  $('weightLabel').textContent = `Weight (${db.profiles[name].unit})`;
+  $('inputDate').value = todayISO();
+  renderAll();
+  // Show the guide automatically the first time any profile is opened
+  if (!db.guideShown) {
+    db.guideShown = true;
+    saveDb();
+    openGuide();
+  }
+}
+
+$('btnBack').addEventListener('click', () => {
+  activeProfile = null;
+  $('trackerScreen').hidden = true;
+  $('profileScreen').hidden = false;
+  renderProfileScreen();
+});
+
+function renderAll() {
+  renderMaintenance();
+  renderEntries();
+}
+
+function renderMaintenance() {
+  const profile = db.profiles[activeProfile];
+  const card    = $('maintenanceCard');
+  const n       = profile.entries.length;
+
+  if (n < 7) {
+    const needed = 7 - n;
+    const dots   = Array.from({ length: 7 }, (_, i) =>
+      `<div class="mc-dot${i < n ? ' on' : ''}"></div>`
+    ).join('');
+    card.innerHTML = `
+      <div class="mc-label">Maintenance Calories</div>
+      <div class="mc-pending">Need <strong>${needed}</strong> more entr${needed === 1 ? 'y' : 'ies'} to calculate</div>
+      <div class="mc-dots">${dots}</div>`;
+  } else {
+    const { value, margin } = computeMaintenance(profile);
+    const marginLine = margin > 0
+      ? `<div class="mc-margin">± ${margin.toLocaleString()} kcal</div>`
+      : '';
+    card.innerHTML = `
+      <div class="mc-label">Maintenance Calories</div>
+      <div class="mc-value">${value.toLocaleString()}</div>
+      <div class="mc-unit">kcal / day</div>
+      ${marginLine}`;
+  }
+}
+
+function renderEntries() {
+  const profile   = db.profiles[activeProfile];
+  const container = $('entriesContainer');
+
+  if (profile.entries.length === 0) {
+    container.innerHTML = '<div class="empty-state">No entries yet. Add your first day above.</div>';
+    return;
+  }
+
+  const sorted = [...profile.entries].sort((a, b) =>
+    b.date < a.date ? -1 : b.date > a.date ? 1 : 0
+  );
+
+  const table = document.createElement('table');
+  table.className = 'entries-table';
+
+  // Header
+  const thead = document.createElement('thead');
+  const hr    = document.createElement('tr');
+  const cols  = ['Date', `Weight (${profile.unit})`, 'Calories', ''];
+  cols.forEach(text => {
+    const th = document.createElement('th');
+    th.textContent = text;
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement('tbody');
+  sorted.forEach(entry => {
+    const tr = document.createElement('tr');
+
+    const tdDate = document.createElement('td');
+    tdDate.textContent = fmtDate(entry.date);
+
+    const tdWeight = document.createElement('td');
+    tdWeight.textContent = entry.weight;
+
+    const tdCal = document.createElement('td');
+    tdCal.textContent = entry.calories.toLocaleString();
+
+    tr.append(tdDate, tdWeight, tdCal);
+
+    const tdDel  = document.createElement('td');
+    tdDel.className = 'td-del';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-icon';
+    delBtn.textContent = '×';
+    delBtn.title = 'Delete entry';
+    delBtn.addEventListener('click', () => {
+      db.profiles[activeProfile].entries =
+        db.profiles[activeProfile].entries.filter(e => e.date !== entry.date);
+      saveDb();
+      renderAll();
+    });
+    tdDel.appendChild(delBtn);
+    tr.appendChild(tdDel);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  container.innerHTML = '';
+  container.appendChild(table);
+}
+
+$('btnAdd').addEventListener('click', () => {
+  const date  = $('inputDate').value;
+  const wStr  = $('inputWeight').value;
+  const cStr  = $('inputCalories').value;
+
+  if (!date) { setErr('entryError', 'Please select a date.'); return; }
+
+  const weight = parseFloat(wStr);
+  if (!wStr || isNaN(weight) || weight <= 0) {
+    setErr('entryError', 'Please enter a valid weight.'); return;
+  }
+
+  const calories = parseInt(cStr, 10);
+  if (!cStr || isNaN(calories) || calories <= 0) {
+    setErr('entryError', 'Please enter valid calories.'); return;
+  }
+
+  const profile = db.profiles[activeProfile];
+  if (profile.entries.some(e => e.date === date)) {
+    setErr('entryError', 'An entry for this date already exists.'); return;
+  }
+
+  profile.entries.push({ date, weight, calories });
+  saveDb();
+  setErr('entryError', '');
+  $('inputWeight').value   = '';
+  $('inputCalories').value = '';
+  renderAll();
+});
+
+[$('inputDate'), $('inputWeight'), $('inputCalories')].forEach(el =>
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') $('btnAdd').click(); })
+);
+
+// ── Init ──────────────────────────────────────────────────────
+
+loadDb();
+renderProfileScreen();
+</script>
+</body>
+</html>
