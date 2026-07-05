@@ -6,8 +6,6 @@ An AI-assisted web app that estimates your maintenance calories, the daily intak
 
 ## How it works
 
-Static "maintenance calorie" calculators rely on population averages (age, height, activity multipliers). This app instead learns *your* number from *your* data.
-
 1. You log daily weigh-ins and calorie intake.
 2. The app fits a **least-squares regression line** to your weight over time, giving a slope in **pounds per day**.
 3. Using the standard **3,500 cal ≈ 1 lb** conversion, that slope becomes a daily energy balance:
@@ -21,3 +19,7 @@ Static "maintenance calorie" calculators rely on population averages (age, heigh
 4. Because the estimate comes from a regression, the app also reports a **margin of error** derived from the uncertainty in the fitted slope, so you get a range rather than a single false-precision number.
 
 The more days you log, the tighter that range gets.
+
+## How to use
+
+The app is deployed [here](https://maintenance-tracker-p2rd.onrender.com) using Render.
