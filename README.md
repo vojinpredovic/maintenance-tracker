@@ -1,6 +1,6 @@
 # Maintenance Tracker
 
-An AI-assisted web app that estimates your maintenance calories, the daily intake that keeps your weight stable, by fitting a regression line to your logged weight history and combining it with your calorie intake. Built for individuals and athletes who want a data-driven target instead of a generic formula.
+A full stack web app that estimates your maintenance calories, the daily intake that keeps your weight stable, by fitting a regression line to your logged weight history and combining it with your calorie intake. Built for individuals and athletes who want a data-driven target instead of a generic formula.
 
 ---
 
