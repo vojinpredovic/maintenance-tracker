@@ -248,6 +248,7 @@ Each phase ends with a checkpoint before the next one starts. Steps marked **(yo
 - Everything in §6, plus the workflow from §8, with the deploy job turned off until Phase 4.
 - Create the dev table with `npm run create-table`, then run `npm test` against it.
 - Test the app by hand locally: login, create a profile, a duplicate name, add entries, a duplicate date, delete an entry, delete a profile, `/healthz`.
+- **(you)** Before merging, turn off **Auto-Deploy** in the Render service's settings. Otherwise Render deploys the DynamoDB code, which can't run there, and the live app breaks. Render then keeps serving the last Postgres version until Phase 5.
 - ✅ Checkpoint: PR reviewed and merged, with CI tests green on DynamoDB Local. Render still serves production, unaffected.
 
 **Phase 2: Table and secrets**
