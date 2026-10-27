@@ -1,0 +1,92 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      dynamodb:
+        image: amazon/dynamodb-local:latest
+        ports: ['8000:8000']
+    env:
+      DYNAMODB_ENDPOINT: http://localhost:8000
+      TABLE_NAME: maintenance-tracker-test
+      AWS_REGION: us-east-2
+      # DynamoDB Local accepts any credentials; these are not real.
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run create-table -- maintenance-tracker-test 5 5
+      - run: npm test
+
+  # Turned on in Phase 4 by setting the repository variable DEPLOY_ENABLED=true.
+  # Other repository variables used: AWS_DEPLOY_ROLE_ARN, EB_APPLICATION,
+  # EB_ENVIRONMENT, EB_BUCKET, APP_URL.
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency: deploy-production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-2
+      VERSION_LABEL: git-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build source bundle
+        run: |
+          git archive --format=zip -o app.zip HEAD -- \
+            server public package.json package-lock.json .ebextensions
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload and create application version
+        run: |
+          aws s3 cp app.zip "s3://${{ vars.EB_BUCKET }}/maintenance-tracker/$VERSION_LABEL.zip"
+          aws elasticbeanstalk create-application-version \
+            --application-name "${{ vars.EB_APPLICATION }}" \
+            --version-label "$VERSION_LABEL" \
+            --description "${{ github.sha }}" \
+            --source-bundle "S3Bucket=${{ vars.EB_BUCKET }},S3Key=maintenance-tracker/$VERSION_LABEL.zip" \
+            --process
+
+      - name: Deploy to environment
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ vars.EB_ENVIRONMENT }}" \
+            --version-label "$VERSION_LABEL"
+          aws elasticbeanstalk wait environment-updated \
+            --environment-names "${{ vars.EB_ENVIRONMENT }}"
+          read -r deployed health <<< "$(aws elasticbeanstalk describe-environments \
+            --environment-names "${{ vars.EB_ENVIRONMENT }}" \
+            --query 'Environments[0].[VersionLabel,Health]' --output text)"
+          echo "Deployed $deployed, health $health"
+          test "$deployed" = "$VERSION_LABEL"
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS "${{ vars.APP_URL }}/healthz" && exit 0
+            sleep 10
+          done
+          echo "Health check failed" && exit 1

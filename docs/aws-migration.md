@@ -148,7 +148,7 @@ All in this repo, delivered as one PR before any AWS setup.
 ### 6.1 Data layer
 - **Dependencies:** remove `pg` and `connect-pg-simple`. Add `@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` (Document client).
 - **`server/db.js`:** exports a configured `DynamoDBDocumentClient` and the table name (`TABLE_NAME` env var). If `DYNAMODB_ENDPOINT` is set, it points there, for DynamoDB Local in CI. On Beanstalk, credentials come from the instance role automatically.
-- **New `server/store.js`:** one function per access pattern in §5 (`upsertUser`, `getUser`, `listProfiles`, `createProfile`, `deleteProfile`, `listEntries`, `addEntry`, `deleteEntry`), including the entry ID encoding. It throws typed errors (`ConflictError`, `NotFoundError`), and the routes map them to 409/404.
+- **New `server/store.js`:** one function per access pattern in §5 (`upsertUser`, `getUser`, `listProfiles`, `createProfile`, `deleteProfile`, `listEntries`, `addEntry`, `deleteEntry`), including the entry ID encoding. It throws `ConflictError` for duplicates, which the routes map to 409. Missing or not-owned profiles come back as `null`, which the routes map to 404 where today's API does.
 - **`server/auth.js` and `server/api.js`:** replace the SQL with `store.js` calls. Routes, status codes and response shapes stay the same.
 - **Delete `server/schema.sql`.** Its replacement is the table definition in §6.5.
 
@@ -170,7 +170,7 @@ The request path is CloudFront → nginx → Node. CloudFront talks to the insta
 Add `GET /healthz`. It returns `200 {"ok": true}` without touching the database or requiring login, and is registered before the `*` catch-all route. Beanstalk health monitoring and the deploy workflow's smoke test (§8) both use it.
 
 ### 6.5 Table definition
-Add `scripts/create-table.js` (`npm run create-table -- <name> <rcu> <wcu>`). It creates the table with the keys from §5, enables TTL on `expiresAt`, and turns on PITR and deletion protection. If the table already exists, it does nothing.
+Add `scripts/create-table.js` (`npm run create-table -- <name> <rcu> <wcu>`). It creates the table with the keys from §5, enables TTL on `expiresAt`, and turns on PITR and deletion protection. Against DynamoDB Local (CI), it skips TTL, PITR and deletion protection. If the table already exists, it does nothing.
 
 This one script creates the prod table, the dev table and the CI table, so they can't drift apart.
 
@@ -185,8 +185,9 @@ This one script creates the prod table, the dev table and the CI table, so they 
 - Tests run against whatever `TABLE_NAME`/`DYNAMODB_ENDPOINT` points to. Each test run uses a fresh `test-<random>` user ID, so it never touches other data.
 
 ### 6.7 Beanstalk config in the repo
-- `.ebextensions/01-env.config` sets `NODE_ENV=production`, `TABLE_NAME=maintenance-tracker` and `AWS_REGION`. It also maps each Parameter Store parameter to an env var through the `aws:elasticbeanstalk:application:environmentsecrets` namespace (§7). It holds only parameter ARNs, never values.
-- `.ebignore` excludes `.env`, `node_modules/`, `.git/`, `docs/`, `tests/` and `scripts/` from the bundle.
+- `.ebextensions/01-env.config` sets `NODE_ENV=production`, `TABLE_NAME=maintenance-tracker` and `AWS_REGION`, and turns on CloudWatch log streaming (7-day retention).
+- **Secrets aren't mapped in the repo.** The repo is public, and the Parameter Store ARNs contain the account ID. The mapping (`aws:elasticbeanstalk:application:environmentsecrets` namespace, §7) is set on the environment itself in Phase 3.
+- **The source bundle is an explicit list:** `git archive` of `server/`, `public/`, `package.json`, `package-lock.json` and `.ebextensions/`. Untracked files like `.env` and `node_modules/` can never end up in it, so no `.ebignore` is needed.
 - Beanstalk runs `npm install --omit=dev` on the instance, so `package-lock.json` must stay committed.
 
 ### 6.8 Cleanup
@@ -221,8 +222,8 @@ Workflow `.github/workflows/deploy.yml`:
    - `npm ci`.
    - Start DynamoDB Local as a service container (`amazon/dynamodb-local`), which needs no AWS access.
    - Run `npm run create-table` against it, then `npm test`.
-3. **Deploy job:** only on `main`, only after tests pass.
-   1. Zip the repo using `.ebignore` rules. The version label is the commit SHA.
+3. **Deploy job:** only on `main`, only after tests pass, and only when the repository variable `DEPLOY_ENABLED` is `true` (set in Phase 4). Settings come from repository variables: `AWS_DEPLOY_ROLE_ARN`, `EB_APPLICATION`, `EB_ENVIRONMENT`, `EB_BUCKET` and `APP_URL`.
+   1. Build the source bundle (§6.7). The version label is `git-<sha>-<run id>-<attempt>`, so re-running an old commit's workflow (a rollback) never collides with an existing label.
    2. `aws-actions/configure-aws-credentials` assumes an IAM role through GitHub OIDC. The role's trust policy accepts only `repo:vojinpredovic/maintenance-tracker:ref:refs/heads/main`.
    3. Upload the zip to the Beanstalk S3 bucket, run `create-application-version`, then `update-environment`, then wait until the environment is `Ready`.
    4. **Smoke test:** `curl` `https://<cloudfront>/healthz` expecting 200. If it fails, the job fails.
@@ -257,6 +258,7 @@ Each phase ends with a checkpoint before the next one starts. Steps marked **(yo
 
 **Phase 3: Beanstalk + CloudFront**
 - Create the Beanstalk application and single-instance environment. Attach the instance-role policy from §7.
+- Map the Parameter Store parameters to env vars on the environment (`environmentsecrets` namespace, §6.7).
 - Create the CloudFront distribution pointing at the environment's URL. Restrict the instance security group to the CloudFront prefix list.
 - Set `CALLBACK_URL` and refresh the environment.
 - **(you)** In Google Cloud Console, create a new OAuth client secret and add `https://<id>.cloudfront.net/auth/google/callback` as an authorized redirect URI. Keep the Render URI for now.
@@ -284,7 +286,7 @@ Each phase ends with a checkpoint before the next one starts. Steps marked **(yo
 - [ ] Duplicate profile names and duplicate entry dates return 409 with the existing messages. Invalid dates and numbers return 400.
 - [ ] Deleting a profile removes all its entries (check in the DynamoDB console).
 - [ ] The session survives an app restart (`eb restart` or redeploy), which proves sessions live in DynamoDB.
-- [ ] Logging out removes the session item.
+- [ ] After logging out, the old session cookie no longer authenticates. Passport replaces the session with an empty one, which TTL removes later.
 - [ ] Direct HTTP to the instance's own address is refused.
 - [ ] The instance role can't `Scan` or reach any other table.
 - [ ] No secret values appear in the repo, in GitHub Actions logs, or in Beanstalk's plain-text env config.
