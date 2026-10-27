@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const pool = require('./db');
+const store = require('./store');
 
 const router = Router();
 
@@ -8,6 +8,28 @@ const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
 function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
   next();
+}
+
+// ── Validation ──────────────────────────────────────────────────
+// Postgres used to reject bad values through its column types; DynamoDB
+// stores whatever it's given, so the checks live here now.
+
+function isValidDate(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+function parseWeight(v) {
+  const n = Number(v);
+  if (v === '' || v == null || !Number.isFinite(n) || n <= 0 || n >= 10000) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function parseCalories(v) {
+  const n = Number(v);
+  if (v === '' || v == null || !Number.isInteger(n) || n <= 0 || n >= 100000) return null;
+  return n;
 }
 
 // ── Current user ────────────────────────────────────────────────
@@ -20,101 +42,65 @@ router.get('/me', requireAuth, (req, res) => {
 // ── Profiles ────────────────────────────────────────────────────
 
 router.get('/profiles', requireAuth, wrap(async (req, res) => {
-  const { rows } = await pool.query(
-    `SELECT p.id, p.name, p.unit,
-            COUNT(e.id)::int AS entry_count
-     FROM profiles p
-     LEFT JOIN entries e ON e.profile_id = p.id
-     WHERE p.user_id = $1
-     GROUP BY p.id
-     ORDER BY p.created_at`,
-    [req.user.id]
-  );
-  res.json(rows);
+  res.json(await store.listProfiles(req.user.id));
 }));
 
 router.post('/profiles', requireAuth, wrap(async (req, res) => {
-  const { name, unit } = req.body;
-  if (!name || !['kg', 'lbs'].includes(unit)) {
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const { unit } = req.body;
+  if (!name || name.length > 40 || !['kg', 'lbs'].includes(unit)) {
     return res.status(400).json({ error: 'Invalid name or unit.' });
   }
 
-  const existing = await pool.query(
-    'SELECT id FROM profiles WHERE user_id = $1 AND name = $2',
-    [req.user.id, name]
-  );
-  if (existing.rows.length) {
-    return res.status(409).json({ error: 'A profile with this name already exists.' });
+  try {
+    res.status(201).json(await store.createProfile(req.user.id, { name, unit }));
+  } catch (err) {
+    if (err instanceof store.ConflictError) return res.status(409).json({ error: err.message });
+    throw err;
   }
-
-  const { rows } = await pool.query(
-    'INSERT INTO profiles (user_id, name, unit) VALUES ($1, $2, $3) RETURNING id, name, unit',
-    [req.user.id, name, unit]
-  );
-  res.status(201).json(rows[0]);
 }));
 
 router.delete('/profiles/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query(
-    'DELETE FROM profiles WHERE id = $1 AND user_id = $2',
-    [req.params.id, req.user.id]
-  );
+  await store.deleteProfile(req.user.id, req.params.id);
   res.sendStatus(204);
 }));
 
 // ── Entries ─────────────────────────────────────────────────────
 
 router.get('/profiles/:id/entries', requireAuth, wrap(async (req, res) => {
-  const prof = await pool.query(
-    'SELECT id FROM profiles WHERE id = $1 AND user_id = $2',
-    [req.params.id, req.user.id]
-  );
-  if (!prof.rows.length) return res.status(404).json({ error: 'Profile not found.' });
-
-  const { rows } = await pool.query(
-    'SELECT id, date, weight::float, calories FROM entries WHERE profile_id = $1 ORDER BY date',
-    [req.params.id]
-  );
-  res.json(rows.map(r => ({ ...r, date: r.date.toISOString().slice(0, 10) })));
+  if (!(await store.getProfile(req.user.id, req.params.id))) {
+    return res.status(404).json({ error: 'Profile not found.' });
+  }
+  res.json(await store.listEntries(req.params.id));
 }));
 
 router.post('/profiles/:id/entries', requireAuth, wrap(async (req, res) => {
-  const prof = await pool.query(
-    'SELECT id FROM profiles WHERE id = $1 AND user_id = $2',
-    [req.params.id, req.user.id]
-  );
-  if (!prof.rows.length) return res.status(404).json({ error: 'Profile not found.' });
+  if (!(await store.getProfile(req.user.id, req.params.id))) {
+    return res.status(404).json({ error: 'Profile not found.' });
+  }
 
   const { date, weight, calories } = req.body;
   if (!date || weight == null || calories == null) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
+  const w = parseWeight(weight);
+  const c = parseCalories(calories);
+  if (!isValidDate(date) || w == null || c == null) {
+    return res.status(400).json({ error: 'Invalid date, weight or calories.' });
+  }
 
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO entries (profile_id, date, weight, calories)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, date, weight::float, calories`,
-      [req.params.id, date, weight, calories]
-    );
-    const entry = rows[0];
-    res.status(201).json({ ...entry, date: entry.date.toISOString().slice(0, 10) });
+    res.status(201).json(await store.addEntry(req.params.id, { date, weight: w, calories: c }));
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'An entry for this date already exists.' });
-    }
+    if (err instanceof store.ConflictError) return res.status(409).json({ error: err.message });
     throw err;
   }
 }));
 
 router.delete('/entries/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query(
-    `DELETE FROM entries
-     WHERE id = $1
-       AND profile_id IN (SELECT id FROM profiles WHERE user_id = $2)`,
-    [req.params.id, req.user.id]
-  );
+  await store.deleteEntry(req.user.id, req.params.id);
   res.sendStatus(204);
 }));
 
 module.exports = router;
+module.exports.validation = { isValidDate, parseWeight, parseCalories };

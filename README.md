@@ -22,4 +22,25 @@ The more days you log, the tighter that range gets.
 
 ## How to use
 
-The app is deployed [here](https://maintenance-tracker-p2rd.onrender.com) using Render.
+The app is deployed [here](https://maintenance-tracker-p2rd.onrender.com). It is moving from Render to AWS; this link will change once the move is done.
+
+## Stack
+
+- **Backend:** Node.js, Express, Passport (Google sign-in)
+- **Database:** Amazon DynamoDB (single table; sessions included)
+- **Hosting:** AWS Elastic Beanstalk behind CloudFront, secrets in Systems Manager Parameter Store
+- **CI/CD:** GitHub Actions runs the tests against DynamoDB Local on every push and deploys `main` to Elastic Beanstalk
+
+See [docs/aws-migration.md](docs/aws-migration.md) for the architecture, data model and deployment details.
+
+## Local development
+
+1. `npm install`
+2. Sign in to AWS: `aws sso login`
+3. Copy `.env.example` to `.env` and fill in the Google OAuth values and a `SESSION_SECRET`.
+4. Create the dev table once: `npm run create-table -- maintenance-tracker-dev 5 5`
+5. `npm run dev`, then open http://localhost:3000
+
+Run the tests with `npm test`. They use the table in `TABLE_NAME` and clean up after themselves.
+
+**Changing a production secret:** update it in Parameter Store, then refresh the Elastic Beanstalk environment so the new value is read. Beanstalk only reads parameters when an instance starts (see [docs/aws-migration.md](docs/aws-migration.md) §7).

@@ -1,21 +1,34 @@
 require('dotenv').config();
 const express    = require('express');
 const session    = require('express-session');
-const PgSession  = require('connect-pg-simple')(session);
 const path       = require('path');
-const pool       = require('./db');
+const DynamoSessionStore = require('./session-store');
 const passport   = require('./auth');
 const api        = require('./api');
 
 const app = express();
 
-// Trust Render's reverse proxy so secure cookies work
+// Trust the reverse proxy (nginx on Elastic Beanstalk) so secure cookies work
 app.set('trust proxy', 1);
+
+// CloudFront reaches the instance over plain HTTP and reports the viewer's
+// protocol in CloudFront-Forwarded-Proto. Only CloudFront can reach the
+// instance (security group), so the header can be trusted.
+app.use((req, res, next) => {
+  if (req.get('CloudFront-Forwarded-Proto') === 'https') {
+    req.headers['x-forwarded-proto'] = 'https';
+  }
+  next();
+});
 
 app.use(express.json());
 
+// ── Health check ────────────────────────────────────────────────
+
+app.get('/healthz', (req, res) => res.json({ ok: true }));
+
 app.use(session({
-  store: new PgSession({ pool }),
+  store: new DynamoSessionStore(),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
